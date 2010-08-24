@@ -1,0 +1,50 @@
+python-mtdev
+============
+
+Python binding for mtdev.
+Project mtdev is available at https://launchpad.net/mtdev
+
+
+Installation
+------------
+
+python setup.py install
+
+
+Test with a multitouch device
+-----------------------------
+
+python -m mtdev /dev/input/eventX
+
+
+Usage
+-----
+
+Example of code ::
+
+    slot = 0
+    filename = '/dev/input/event3'
+
+    # open the device
+    dev = mtdev.Device(sys.argv[1])
+
+    while True:
+
+        # if no activity, sleep :)
+        if dev.idle(1000):
+            continue
+
+        # read all available data
+        while True
+            data = dev.get()
+            if data is None:
+                break
+
+            # change the slot number
+            if data.type == mtdev.MTDEV_TYPE_EV_ABS and \
+                data.code == mtdev.MTDEV_CODE_SLOT:
+                slot = data.value
+
+            # print data
+            print dict(slot=slot, code=hex(data.code), \
+                       type=data.type, value=data.value)
