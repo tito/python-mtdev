@@ -9,8 +9,7 @@ documentation for further details.
 
 '''
 
-__version__ = '0.1'
-
+import os
 from ctypes import cdll, Structure, c_ulong, c_int, c_ushort, \
                    c_void_p, pointer, POINTER, byref
 
@@ -63,7 +62,15 @@ MTDEV_TYPE_EV_FF         = 0x15
 MTDEV_TYPE_EV_PWR        = 0x16
 MTDEV_TYPE_EV_FF_STATUS  = 0x17
 
-MTDEV_ABS_SIZE           = 11
+MTDEV_ABS_TRACKING_ID	= 9
+MTDEV_ABS_POSITION_X	= 5
+MTDEV_ABS_POSITION_Y	= 6
+MTDEV_ABS_TOUCH_MAJOR	= 0
+MTDEV_ABS_TOUCH_MINOR	= 1
+MTDEV_ABS_WIDTH_MAJOR	= 2
+MTDEV_ABS_WIDTH_MINOR	= 3
+MTDEV_ABS_ORIENTATION	= 4
+MTDEV_ABS_SIZE          = 11
 
 class timeval(Structure):
     _fields_ = [
@@ -119,26 +126,22 @@ class Device:
     def __init__(self, filename):
         self._filename = filename
         self._fd = -1
-        self._fdh = None
         self._device = mtdev()
 
-        self._fdh = open(filename, 'rb')
-        self._fd = self._fdh.fileno()
+        self._fd = os.open(filename, os.O_NONBLOCK | os.O_RDONLY)
         ret = mtdev_open(pointer(self._device), self._fd)
         if ret != 0:
-            self._fdh.close()
-            self._fdh = None
+            os.close(self._fd)
             self._fd = -1
             raise Exception('Unable to open device')
 
     def close(self):
         '''Close the mtdev converter
         '''
-        if not self._fdh:
+        if self._fd == -1:
             return
         mtdev_close(POINTER(self._device))
-        self._fdh.close()
-        self._fdh = None
+        os.close(self._fd)
         self._fd = -1
 
     def idle(self, ms):
@@ -152,13 +155,13 @@ class Device:
             Return True if the device is idle, i.e, there are no fetched events
             in the pipe and there is nothing to fetch from the device.
         '''
-        if not self._fdh:
+        if self._fd == -1:
             raise Exception('Device closed')
         return bool(mtdev_idle(pointer(self._device), self._fd, ms))
 
 
     def get(self):
-        if not self._fdh:
+        if self._fd == -1:
             raise Exception('Device closed')
         ev = input_event()
         if mtdev_get(pointer(self._device), self._fd, byref(ev), 1) <= 0:
@@ -168,14 +171,14 @@ class Device:
     def has_mtdata(self):
         '''Return True if the device has multitouch data.
         '''
-        if not self._fdh:
+        if self._fd == -1:
             raise Exception('Device closed')
         return bool(self._device.caps.has_mtdata)
 
     def has_slot(self):
         '''Return True if the device has slot information.
         '''
-        if not self._fdh:
+        if self._fd == -1:
             raise Exception('Device closed')
         return bool(self._device.caps.has_slot)
 
@@ -186,7 +189,7 @@ class Device:
             `index` : int
                 One of const starting with a name ABS_MT_
         '''
-        if not self._fdh:
+        if self._fd == -1:
             raise Exception('Device closed')
         if index < 0 or index >= MTDEV_ABS_SIZE:
             raise IndexError('Invalid index')
@@ -200,7 +203,7 @@ class Device:
     def get_slot(self):
         '''Return the slot data.
         '''
-        if not self._fdh:
+        if self._fd == -1:
             raise Exception('Device closed')
         if self._device.caps.has_slot == 0:
             return
@@ -213,53 +216,10 @@ class Device:
             `index` : int
                 One of const starting with a name ABS_MT_
         '''
-        if not self._fdh:
+        if self._fd == -1:
             raise Exception('Device closed')
         if index < 0 or index >= MTDEV_ABS_SIZE:
             raise IndexError('Invalid index')
         return self._device.caps.abs[index]
 
-if __name__ == '__main__':
-    import sys
-    import mtdev
-    import glob
 
-    if len(sys.argv) != 2:
-        print 'Usage: python mtdevtest.py <device>'
-        sys.exit(1)
-
-    dev = mtdev.Device(sys.argv[1])
-    print 'Is multitouch device:', dev.has_mtdata()
-
-    # show slots
-    print 'Slot available:', dev.has_slot()
-    if dev.has_slot():
-        print ' -> ', dev.get_slot()
-
-    # show abs
-    for x in xrange(dev.get_max_abs()):
-        print 'ABS', x, 'available:', dev.has_abs(x)
-        if dev.has_abs(x):
-            print ' -> ', dev.get_abs(x)
-
-    # loop
-    slot = 0
-    while True:
-        # wait to have data
-        if dev.idle(1):
-            continue
-
-        # got data, read the queue
-        while True:
-            data = dev.get()
-            if data is None:
-                break
-
-            # change the slot number
-            if data.type == mtdev.MTDEV_TYPE_EV_ABS and \
-               data.code == mtdev.MTDEV_CODE_SLOT:
-                slot = data.value
-
-            # print data
-            print dict(slot=slot, code=hex(data.code), \
-                       type=data.type, value=data.value)
